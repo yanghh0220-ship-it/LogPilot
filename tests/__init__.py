@@ -1,3 +1,2 @@
-# tests/__init__.py
-# 这个文件让 Python 把 tests/ 当作一个"包"
-# 没有这个文件，pytest 可能找不到测试
+# 这个文件让 Python 把 tests/ 目录识别为包
+# pytest 在某些配置下需要这个文件才能正确导入模块
