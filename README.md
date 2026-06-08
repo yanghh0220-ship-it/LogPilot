@@ -11,7 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-Pytest-yellow?logo=pytest&logoColor=white)](https://pytest.org/)
 [![DeepSeek](https://img.shields.io/badge/AI-DeepSeek-6366F1?logo=google&logoColor=white)](https://platform.deepseek.com/)
-[![CI](https://github.com/Yanghh0220/LogPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Yanghh0220/LogPilot/actions)
+[![CI](https://github.com/Yanghh0220/LogPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Yanghh0220/LogPilot/actions/workflows/ci.yml)
 
 [📖 快速开始](#-快速开始) · [✨ 功能特性](#-功能特性) · [🗺️ Roadmap](#%EF%B8%8F-roadmap) · [🐛 报告问题](https://github.com/Yanghh0220/LogPilot/issues)
 
@@ -110,6 +110,63 @@
 </table>
 
 > 💡 不在列表里的日志也能分析，只是平台识别的准确度可能稍低。
+
+---
+
+## 🏗️ 系统架构
+
+```
+用户输入日志（粘贴 or 点击示例）
+         │
+         ▼
+┌─────────────────────────────────┐
+│          analyzer.py            │
+│  • 自动识别平台（7种）           │
+│  • 提取关键错误行 + 上下文       │
+│  • 过滤噪音，压缩日志体积        │
+│  • 统计错误/警告/致命错误数量    │
+└────────────────┬────────────────┘
+                 │ 结构化日志数据
+                 ▼
+┌─────────────────────────────────┐
+│           prompts.py            │
+│  • 动态构建结构化 Prompt        │
+│  • Few-shot 示例约束输出格式    │
+│  • 根据错误严重程度调整分析重点  │
+└────────────────┬────────────────┘
+                 │ 完整 Prompt
+                 ▼
+┌─────────────────────────────────┐
+│          ai_engine.py           │
+│  • 指数退避重试（最多3次）       │
+│  • 结构化异常分类                │
+│    AuthError / RateLimitError   │
+│    QuotaError / APIError        │
+│  • 支持 DeepSeek/OpenAI/Claude  │
+└────────────────┬────────────────┘
+                 │
+                 ▼
+        结构化分析报告
+   ┌────────────────────┐
+   │  🔴 错误摘要        │
+   │  🔍 根因分析(Top3)  │
+   │  🛠️ 修复步骤        │
+   │  📋 排查命令        │
+   │  ⚡ 严重程度        │
+   │  💡 预防建议        │
+   └────────────────────┘
+```
+
+## ⚙️ 工程特性
+
+| 特性 | 实现方式 |
+|------|---------|
+| 🔄 自动重试 | 指数退避策略，超时/连接错误重试最多3次（1s→2s→4s） |
+| 🔐 异常分类 | 自定义 AuthError/RateLimitError/QuotaError，对用户友好提示 |
+| 📝 Prompt工程 | Few-shot示例约束输出格式，temperature=0.2保证稳定性 |
+| 🧪 单元测试 | pytest覆盖核心逻辑，20+测试用例 |
+| 🔄 CI/CD | GitHub Actions自动运行代码检查和测试 |
+| 📊 日志预处理 | 关键词提取+上下文截取，token消耗降低~80% |
 
 ---
 
@@ -257,6 +314,7 @@ ai_engine.py（重试机制 + 异常分类 + API 调用）
 - [x] 结构化异常处理
 - [x] 单元测试
 - [x] GitHub Actions CI
+- [x] Few-shot Prompt 工程
 
 ### 🔜 v1.1 — 计划中
 
