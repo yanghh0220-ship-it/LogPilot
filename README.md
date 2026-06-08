@@ -112,14 +112,24 @@ streamlit run app.py
 
 ```
 LogPilot/
-├── app.py              # Streamlit 主界面
-├── analyzer.py         # AI 分析核心逻辑
-├── prompt.py           # Prompt 模板
-├── requirements.txt    # Python 依赖
-├── .env.example        # 环境变量示例
-├── .gitignore          # Git 忽略配置
-├── CLAUDE.md           # AI 结对编程指南
-└── README.md           # 项目说明
+├── app.py                # Streamlit 主界面
+├── style.css             # 全局样式（从 app.py 抽离）
+├── analyzer.py           # AI 分析核心逻辑
+├── log_parser.py         # 日志预处理（平台检测、错误提取、截断）
+├── prompt.py             # Prompt 模板（Few-shot + 用户提示构建）
+├── models.py             # 数据类型定义（TypedDict）
+├── config.py             # 集中配置管理（环境变量读取）
+├── requirements.txt      # Python 依赖
+├── .env.example          # 环境变量示例
+├── .gitignore            # Git 忽略配置
+├── .streamlit/           # Streamlit 配置
+│   └── config.toml
+├── tests/                # 单元测试
+│   ├── test_log_parser.py
+│   └── test_prompt.py
+├── CLAUDE.md             # AI 结对编程指南
+├── LICENSE               # MIT 许可证
+└── README.md             # 项目说明
 ```
 
 ---

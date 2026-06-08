@@ -1,0 +1,293 @@
+/* LogPilot 全局样式 — 简约风 */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ====== 全局 ====== */
+.stApp, .stApp p, .stApp span, .stApp label, .stApp div {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ====== 侧边栏 ====== */
+[data-testid="stSidebar"] {
+    background: #fafafa;
+    border-right: 1px solid #e5e5e5;
+}
+/* 侧边栏收起/展开按钮基础样式 */
+[data-testid="stSidebarCollapsedControl"] button,
+[data-testid="stSidebarCollapseButton"] button,
+button[data-testid="stSidebarCollapseControl"] {
+    border: 1px solid #d4d4d4 !important;
+    border-radius: 6px !important;
+}
+[data-testid="stSidebar"] .stMarkdown h1,
+[data-testid="stSidebar"] .stMarkdown h2,
+[data-testid="stSidebar"] .stMarkdown h3 {
+    color: #1a1a1a !important;
+    font-weight: 700;
+}
+
+/* ====== 标题区域 ====== */
+.page-header {
+    padding: 20px 0 8px;
+    border-bottom: 1px solid #e5e5e5;
+    margin-bottom: 28px;
+}
+.page-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #1a1a1a;
+    letter-spacing: -0.5px;
+    margin: 0;
+}
+.page-desc {
+    font-size: 0.9rem;
+    color: #737373;
+    margin-top: 6px;
+}
+
+/* ====== 功能说明 ====== */
+.features {
+    display: flex;
+    gap: 24px;
+    margin: 0 0 28px;
+}
+.feature-item {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+.feature-icon {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    border-radius: 8px;
+    background: #f5f5f5;
+    border: 1px solid #e5e5e5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+}
+.feature-text-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+.feature-text-desc {
+    font-size: 0.78rem;
+    color: #a3a3a3;
+    margin-top: 2px;
+}
+
+/* ====== 示例按钮 ====== */
+.sample-label {
+    font-size: 0.8rem;
+    color: #a3a3a3;
+    margin-bottom: 8px;
+}
+
+/* ====== 结果卡片 ====== */
+.result-card {
+    background: #fff;
+    border: 1px solid #e5e5e5;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 16px 0;
+}
+.result-card-left {
+    border-left: 3px solid #d4d4d4;
+}
+.result-card-left.red    { border-left-color: #ef4444; }
+.result-card-left.blue   { border-left-color: #3b82f6; }
+.result-card-left.green  { border-left-color: #22c55e; }
+.result-card-left.purple { border-left-color: #8b5cf6; }
+
+.card-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #737373;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+}
+.card-body {
+    font-size: 0.95rem;
+    color: #1a1a1a;
+    line-height: 1.7;
+}
+
+/* ====== 修复建议 ====== */
+.fix-item {
+    padding: 14px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+.fix-item:last-child {
+    border-bottom: none;
+}
+.fix-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    background: #f5f5f5;
+    border: 1px solid #e5e5e5;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #525252;
+    margin-right: 8px;
+}
+.fix-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+.fix-desc {
+    font-size: 0.85rem;
+    color: #737373;
+    line-height: 1.6;
+    margin-top: 6px;
+    padding-left: 30px;
+}
+
+/* ====== 按钮 ====== */
+.stButton > button {
+    background: #1a1a1a !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    padding: 10px 28px !important;
+    font-weight: 600 !important;
+    font-size: 0.9rem !important;
+    transition: background 0.2s ease !important;
+}
+.stButton > button:hover {
+    background: #404040 !important;
+}
+
+/* ====== 输入框 ====== */
+.stTextArea textarea {
+    border-radius: 8px !important;
+    border: 1px solid #d4d4d4 !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.85rem !important;
+    line-height: 1.6 !important;
+}
+.stTextArea textarea:focus {
+    border-color: #1a1a1a !important;
+    box-shadow: 0 0 0 1px #1a1a1a !important;
+}
+
+/* ====== 代码块 ====== */
+.stCodeBlock > div {
+    border-radius: 8px !important;
+    border: 1px solid #e5e5e5 !important;
+}
+
+/* ====== 侧边栏内容 ====== */
+.sidebar-section {
+    margin: 16px 0;
+}
+.sidebar-section-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #a3a3a3;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 10px;
+}
+.sidebar-item {
+    font-size: 0.85rem;
+    color: #525252;
+    padding: 4px 0;
+    line-height: 1.6;
+}
+.step-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 8px 0;
+}
+.step-num {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    border-radius: 5px;
+    background: #f0f0f0;
+    border: 1px solid #e5e5e5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #525252;
+}
+.step-text {
+    font-size: 0.85rem;
+    color: #525252;
+    line-height: 1.5;
+    padding-top: 1px;
+}
+
+/* ====== 页脚 ====== */
+.footer {
+    text-align: center;
+    padding: 24px 0 16px;
+    margin-top: 20px;
+    border-top: 1px solid #e5e5e5;
+    font-size: 0.8rem;
+    color: #a3a3a3;
+}
+
+/* ====== 状态标签 ====== */
+.status-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #16a34a;
+    margin-bottom: 16px;
+}
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+}
+
+/* 隐藏默认元素 */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+.stDeployButton { display: none; }
+/* 固定侧边栏 */
+[data-testid="stSidebar"] {
+    min-width: 280px !important;
+    max-width: 280px !important;
+}
+
+/* 隐藏侧边栏收起按钮 — 多重选择器兜底 */
+[data-testid="stSidebarCollapseControl"] { display: none !important; }
+[data-testid="stSidebarCollapsedControl"] { display: none !important; }
+button[aria-label="Close sidebar"] { display: none !important; }
+button[aria-label="Open sidebar"] { display: none !important; }
+[data-testid="stSidebar"] button:first-child { display: none !important; }
+[data-testid="stHeader"] > div:first-child { display: none !important; }
+
+/* 用白色遮罩覆盖按钮可能存在的位置 */
+[data-testid="stSidebar"]::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: -40px;
+    width: 40px;
+    height: 48px;
+    background: #ffffff;
+    z-index: 999;
+}
