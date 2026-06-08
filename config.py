@@ -34,3 +34,18 @@ DEEPSEEK_TEMPERATURE = float(os.getenv(
 
 # API Key（从 .env 文件读取）
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+
+# ============================================
+# AI 提供商选择
+# ============================================
+# 可选值："openai"（兼容 DeepSeek/Moonshot/智谱）或 "claude"
+AI_PROVIDER = os.getenv("AI_PROVIDER", "openai")
+
+# AI 温度参数（默认 0.2，比 0 更稳定但不完全死板）
+AI_TEMPERATURE = float(os.getenv("AI_TEMPERATURE", "0.2"))
+
+# ============================================
+# Claude API 配置
+# ============================================
+CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514")

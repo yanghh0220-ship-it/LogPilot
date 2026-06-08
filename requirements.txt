@@ -1,9 +1,11 @@
 # LogPilot 依赖包列表
 # 安装命令：pip install -r requirements.txt
 
-streamlit          # Web 界面框架，让我们用 Python 就能写网页
-openai             # DeepSeek 兼容 OpenAI SDK，所以装这个就行
-python-dotenv      # 读取 .env 文件中的 API Key
+# ---- 运行时依赖 ----
+streamlit==1.37.0       # Web 界面框架，用 Python 写网页
+requests==2.31.0        # HTTP 请求库，调用 AI API
+python-dotenv==1.0.0    # 读取 .env 文件中的 API Key
 
-# 开发依赖（只在开发/测试时需要）
-pytest             # 测试框架，运行 pytest 命令即可跑测试
+# ---- 开发/测试依赖 ----
+pytest                  # 测试框架，运行 pytest 命令即可跑测试
+flake8                  # 代码风格检查工具，保持代码规范

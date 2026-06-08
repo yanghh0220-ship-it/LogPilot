@@ -11,6 +11,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-Pytest-yellow?logo=pytest&logoColor=white)](https://pytest.org/)
 [![DeepSeek](https://img.shields.io/badge/AI-DeepSeek-6366F1?logo=google&logoColor=white)](https://platform.deepseek.com/)
+[![CI](https://github.com/Yanghh0220/LogPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Yanghh0220/LogPilot/actions)
 
 [📖 快速开始](#-快速开始) · [✨ 功能特性](#-功能特性) · [🗺️ Roadmap](#%EF%B8%8F-roadmap) · [🐛 报告问题](https://github.com/Yanghh0220/LogPilot/issues)
 
@@ -178,18 +179,23 @@ pytest tests/test_log_parser.py -v
 ```
 LogPilot/
 ├── app.py                  # 🎨 Streamlit 前端主入口
-├── analyzer.py             # 🧠 AI 分析引擎（调用 DeepSeek API）
-├── prompt.py               # 📝 Prompt 工程（系统提示词 + 用户提示词构建）
+├── ai_engine.py            # 🤖 AI 调用引擎（重试机制 + 异常分类 + API 调用）
+├── analyzer.py             # 🧠 日志分析（平台识别 + 错误提取 + 统计）
+├── prompts.py              # 📝 Prompt 工程（系统提示词 + Few-shot + 用户提示词构建）
 ├── log_parser.py           # 🔍 日志预处理（平台识别 / 错误提取 / 智能截断）
 ├── models.py               # 📐 类型定义（TypedDict）
 ├── config.py               # ⚙️ 配置管理（环境变量读取）
 ├── style.css               # 🎨 全局 CSS 样式
 ├── .env.example            # 🔑 环境变量模板
 ├── requirements.txt        # 📦 Python 依赖清单
+├── .github/
+│   └── workflows/
+│       └── ci.yml          # 🔄 GitHub Actions CI 配置
 ├── .streamlit/
 │   └── config.toml         # Streamlit UI 配置
 ├── tests/                  # 🧪 单元测试
 │   ├── conftest.py         #    Pytest 配置（sys.path 处理）
+│   ├── test_analyzer.py    #    日志分析模块测试
 │   ├── test_log_parser.py  #    日志解析模块测试
 │   └── test_prompt.py      #    Prompt 模块测试
 ├── CLAUDE.md               # 🤖 AI 结对编程指南
@@ -210,6 +216,30 @@ LogPilot/
 | **测试** | Pytest | Python 社区标准，上手简单 |
 | **配置** | python-dotenv | 安全存储 API Key，不硬编码 |
 
+### 📐 数据流
+
+```
+用户输入日志
+    ↓
+analyzer.py（平台识别 + 错误提取 + 统计）
+    ↓
+prompts.py（构建结构化 Prompt + Few-shot）
+    ↓
+ai_engine.py（重试机制 + 异常分类 + API 调用）
+    ↓
+结构化报告（摘要 / 根因 / 命令 / 严重程度）
+```
+
+---
+
+## ♻️ 工程特性
+
+- ♻️ **指数退避重试机制**（最多 3 次，处理网络抖动）
+- 🔐 **结构化异常分类**（AuthError / RateLimitError / QuotaError）
+- 🧪 **单元测试覆盖核心逻辑**（pytest）
+- 🔄 **GitHub Actions CI 自动化检查**
+- 📝 **Few-shot Prompt 工程**（稳定输出格式）
+
 ---
 
 ## 🗺️ Roadmap
@@ -223,6 +253,10 @@ LogPilot/
 - [x] 智能日志截断（保留头尾关键信息，中间省略）
 - [x] 响应式 UI 设计 + 自定义 CSS 样式
 - [x] 单元测试覆盖（log_parser + prompt）
+- [x] 指数退避重试机制
+- [x] 结构化异常处理
+- [x] 单元测试
+- [x] GitHub Actions CI
 
 ### 🔜 v1.1 — 计划中
 
