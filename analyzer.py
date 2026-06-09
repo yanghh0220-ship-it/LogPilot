@@ -162,9 +162,13 @@ def call_ai(prompt: str) -> str:
     if not DEEPSEEK_API_KEY:
         return (
             "⚠️ **API Key 未配置**\n\n"
-            "请在项目根目录的 `.env` 文件中填入你的 DeepSeek API Key：\n\n"
+            "**本地开发：** 在项目根目录的 `.env` 文件中填入你的 DeepSeek API Key：\n\n"
             "```\n"
             "DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx\n"
+            "```\n\n"
+            "**Streamlit Cloud：** 在 App 设置 → Secrets 中添加：\n\n"
+            "```toml\n"
+            "API_KEY = \"sk-xxxxxxxxxxxxxxxxxxxxxxxx\"\n"
             "```\n\n"
             "👉 获取地址：https://platform.deepseek.com/"
         )
