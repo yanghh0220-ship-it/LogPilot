@@ -12,3 +12,7 @@ instructor>=1.0.0       # LLM 结构化输出（强制 AI 按 Schema 生成 JSON
 # ---- 语义缓存依赖 ----
 sentence-transformers>=2.2.0  # 本地 Embedding 模型（all-MiniLM-L6-v2）
 qdrant-client>=1.7.0          # 向量数据库（本地内存模式）
+
+# ---- Multi-Agent 协作依赖 ----
+langgraph>=0.2.0              # LangGraph 状态图框架（多 Agent 编排）
+langchain-core>=0.2.0         # LangChain 核心（LangGraph 依赖，最小集）

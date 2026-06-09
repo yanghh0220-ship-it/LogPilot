@@ -372,3 +372,137 @@ def _legacy_analyze(user_prompt: str) -> AnalysisResult:
         logger.warning("Legacy JSON 解析失败: %s", e)
         from ai_engine import _best_effort_parse_to_model
         return _best_effort_parse_to_model(cleaned, AnalysisResult)
+
+
+# ============================================================
+#  Multi-Agent 分析入口（LangGraph 状态机）
+# ============================================================
+
+def analyze_log_advanced(log_text: str) -> AnalysisResult:
+    """
+    Multi-Agent 分析入口：使用 LangGraph 状态机进行多 Agent 协作分析
+
+    与 analyze_log() 的区别：
+    - 使用 LangGraph 状态图编排：Router → Analyzer → Validator → Summarizer
+    - 引入 Tool-Calling 能力（文档检索、SO 检索）
+    - 命令安全校验为独立的确定性代码层
+    - 危险命令触发重试或人工审查
+    - 迭代上限硬编码为 5
+
+    降级策略：
+    - LangGraph 链路任何节点崩溃 → 300ms 内 fallback 到 analyze_log()
+    - 返回的 AnalysisResult 与 analyze_log() 字段完全一致
+
+    参数:
+        log_text: 用户粘贴的构建日志原文
+
+    返回:
+        AnalysisResult 实例（与 analyze_log() 接口兼容）
+
+    异常:
+        ValueError: 输入为空
+    """
+    # 输入验证
+    if not log_text or not log_text.strip():
+        raise ValueError("日志内容不能为空")
+
+    start_time = time.time()
+
+    # 预处理日志（共享 analyze_log 的预处理逻辑）
+    parsed = parse_log(log_text)
+    stats = get_error_stats(log_text)
+
+    # 获取 RAG 上下文（与 analyze_log 共享缓存逻辑）
+    rag_context = ""
+    cache = _get_or_create_cache()
+    fingerprint = None
+
+    if cache is not None:
+        try:
+            from cache_engine import generate_fingerprint
+            fingerprint = generate_fingerprint(parsed)
+
+            # 先检查缓存命中
+            cached_result = cache.get(fingerprint, parsed)
+            if cached_result is not None:
+                if isinstance(cached_result, dict):
+                    cached_result = AnalysisResult.model_validate(cached_result)
+                logger.info("[Advanced] 缓存命中，直接返回")
+                return cached_result
+
+            # 获取 RAG 上下文
+            rag_context = cache.get_rag_context(fingerprint)
+        except Exception as e:
+            logger.warning("[Advanced] 缓存层异常: %s", e)
+            rag_context = ""
+
+    # 调用 LangGraph Agent 图
+    try:
+        from agent_graph import get_agent_graph
+        graph = get_agent_graph()
+
+        # 构建初始状态
+        initial_state = {
+            "log_text": log_text,
+            "parsed_log": parsed,
+            "error_stats": stats,
+            "rag_context": rag_context or "",
+            "iteration_count": 0,
+            "fallback_used": False,
+            "error_message": "",
+            "tool_calls_made": [],
+            "tool_results": "",
+            "needs_retry": False,
+            "human_review_needed": False,
+        }
+
+        # 执行图
+        final_state = graph.invoke(initial_state)
+
+        # 提取最终报告
+        final_report = final_state.get("final_report", {})
+
+        if not final_report:
+            logger.warning("[Advanced] Agent 图未返回有效报告，走 fallback")
+            return analyze_log(log_text)
+
+        # 转换为 AnalysisResult
+        if isinstance(final_report, AnalysisResult):
+            result = final_report
+        elif isinstance(final_report, dict):
+            try:
+                result = AnalysisResult.model_validate(final_report)
+            except Exception as e:
+                logger.warning("[Advanced] 报告校验失败: %s，走 fallback", e)
+                return analyze_log(log_text)
+        else:
+            logger.warning("[Advanced] 报告类型异常: %s，走 fallback", type(final_report))
+            return analyze_log(log_text)
+
+        # 写入缓存
+        if cache is not None and fingerprint is not None:
+            try:
+                cache.set(fingerprint, result, {
+                    "platform": parsed["platform"],
+                    "error_lines": parsed["error_lines"],
+                })
+            except Exception as e:
+                logger.warning("[Advanced] 缓存写入失败: %s", e)
+
+        elapsed = time.time() - start_time
+        logger.info("[Advanced] 分析完成，耗时 %.2fs", elapsed)
+
+        return result
+
+    except ImportError as e:
+        logger.warning("[Advanced] LangGraph 不可用 (%s)，走 fallback", e)
+        return analyze_log(log_text)
+
+    except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error(
+            "[Advanced] Agent 图执行失败 (%.2fs): %s: %s",
+            elapsed, type(e).__name__, str(e)[:200],
+        )
+        # 降级到 analyze_log()
+        return analyze_log(log_text)
