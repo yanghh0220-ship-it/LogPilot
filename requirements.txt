@@ -2,7 +2,7 @@
 # 安装命令：pip install -r requirements.txt
 
 # ---- 运行时依赖 ----
-streamlit==1.37.0       # Web 界面框架，用 Python 写网页
+streamlit>=1.37.0       # Web 界面框架，用 Python 写网页
 openai>=1.0.0           # OpenAI Python SDK（DeepSeek 兼容 OpenAI 接口）
-requests==2.31.0        # HTTP 请求库，调用 AI API
-python-dotenv==1.0.0    # 读取 .env 文件中的 API Key（本地开发用）
+requests>=2.31.0        # HTTP 请求库，调用 AI API
+python-dotenv>=1.0.0    # 读取 .env 文件中的 API Key（本地开发用）
