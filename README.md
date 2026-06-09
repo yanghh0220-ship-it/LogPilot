@@ -6,7 +6,7 @@
 
 把构建失败日志扔给我，我帮你翻译成人话，直接给你修复命令。
 
-[![🚀 在线体验](https://img.shields.io/badge/🚀_在线体验_Click_Me-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://logpilot-v-1-0.streamlit.app/)
+[![🚀 在线体验](https://img.shields.io/badge/🚀_在线体验_Click_Me-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://loggazer-v-1-0.streamlit.app/)
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.37-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
