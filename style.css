@@ -262,6 +262,77 @@ button[data-testid="stSidebarCollapseControl"] {
     background: #22c55e;
 }
 
+/* ====== P2-1: 进度条动画 ====== */
+/* Streamlit status 容器增强样式 */
+[data-testid="stStatus"] {
+    border-radius: 10px !important;
+    border: 1px solid #e5e5e5 !important;
+    background: #fafafa !important;
+    margin-bottom: 20px !important;
+}
+[data-testid="stStatus"] > div:first-child {
+    font-weight: 600 !important;
+    font-size: 0.9rem !important;
+}
+
+/* 进度脉冲动画（分析中时使用） */
+@keyframes progress-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+.analyzing-indicator {
+    animation: progress-pulse 1.5s ease-in-out infinite;
+}
+
+/* 文件大小指示器悬停效果 */
+.log-size-indicator:hover {
+    border-color: #a3a3a3 !important;
+}
+
+/* P2-3: 错误提示卡片增强 */
+.error-user-card {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-left: 4px solid #ef4444;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 12px 0;
+}
+
+/* 重试按钮高亮脉冲 */
+@keyframes retry-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+}
+.retry-button {
+    animation: retry-glow 2s ease-in-out infinite;
+}
+
+/* P2-4: 资源警告条 */
+.resource-warning-bar {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-left: 3px solid #f59e0b;
+    border-radius: 6px;
+    padding: 10px 16px;
+    margin: 8px 0;
+    font-size: 0.85rem;
+    color: #92400e;
+}
+
+/* 排队指示器 */
+.queue-position-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 0.78rem;
+    color: #1e40af;
+}
+
 /* 隐藏默认元素 */
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }

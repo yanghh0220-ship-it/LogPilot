@@ -103,3 +103,86 @@ CACHE_QDRANT_PATH = _get_secret("CACHE_QDRANT_PATH", "")
 
 # Embedding 模型名称
 CACHE_EMBEDDING_MODEL = _get_secret("CACHE_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+
+# ============================================
+# 性能优化参数 (P0/P1/P2 优化阶段)
+# ============================================
+
+# --- 内容 Hash 缓存 (P0-2) ---
+# 分析结果缓存 TTL（秒），默认 5 分钟
+CONTENT_CACHE_TTL_SECONDS = int(_get_secret("CONTENT_CACHE_TTL_SECONDS", "300"))
+# 分析结果缓存最大条目数
+CONTENT_CACHE_MAXSIZE = int(_get_secret("CONTENT_CACHE_MAXSIZE", "500"))
+# 日志解析结果缓存 TTL（秒），默认 10 分钟
+PARSED_CACHE_TTL_SECONDS = int(_get_secret("PARSED_CACHE_TTL_SECONDS", "600"))
+# 日志解析结果缓存最大条目数
+PARSED_CACHE_MAXSIZE = int(_get_secret("PARSED_CACHE_MAXSIZE", "1000"))
+
+# --- 增量分析 (P1-4) ---
+# 增量追踪 TTL（秒），30 分钟后重新全量分析
+INCREMENTAL_TTL_SECONDS = int(_get_secret("INCREMENTAL_TTL_SECONDS", "1800"))
+
+# --- 线程池 (P0-3) ---
+# API 端线程池大小（CPU 密集型任务隔离）
+API_EXECUTOR_MAX_WORKERS = int(_get_secret("API_EXECUTOR_MAX_WORKERS",
+    str(min(4, (os.cpu_count() or 2)))))
+# Streamlit 端线程池大小
+STREAMLIT_EXECUTOR_MAX_WORKERS = int(_get_secret("STREAMLIT_EXECUTOR_MAX_WORKERS", "2"))
+
+# --- 超时控制 (P1-3) ---
+# AI 分析超时（秒）
+ANALYSIS_TIMEOUT_SECONDS = int(_get_secret("ANALYSIS_TIMEOUT_SECONDS", "120"))
+# 后端健康检查超时（秒）
+HEALTH_CHECK_TIMEOUT = float(_get_secret("HEALTH_CHECK_TIMEOUT", "3.0"))
+# 后端启动总超时（秒）
+STARTUP_TIMEOUT = float(_get_secret("STARTUP_TIMEOUT", "30.0"))
+# API 请求超时（秒）
+API_REQUEST_TIMEOUT = float(_get_secret("API_REQUEST_TIMEOUT", "180.0"))
+
+# --- 日志处理 (P0-4) ---
+# 日志截断最大字符数
+MAX_LOG_LENGTH = int(_get_secret("MAX_LOG_LENGTH", "6000"))
+# 大文件分块处理行数阈值
+LOG_CHUNK_SIZE = int(_get_secret("LOG_CHUNK_SIZE", "10000"))
+
+# --- 资源保护 (P2-4) ---
+# 文件大小硬限制（字符数），超过拒绝
+MAX_LOG_SIZE_CHARS = int(_get_secret("LOGGAZER_MAX_LOG_SIZE", "100000"))
+# 文件大小软警告（字符数），超过时前端提示
+FRONTEND_WARN_SIZE = int(_get_secret("LOGGAZER_WARN_SIZE", "50000"))
+# 内存警告阈值（MB）
+MEMORY_WARN_THRESHOLD_MB = float(_get_secret("LOGGAZER_MEMORY_WARN_MB", "500"))
+# 内存拒绝阈值（MB）
+MEMORY_REJECT_THRESHOLD_MB = float(_get_secret("LOGGAZER_MEMORY_REJECT_MB", "800"))
+# 最大并发分析数
+MAX_CONCURRENT_ANALYSES = int(_get_secret("LOGGAZER_MAX_CONCURRENT", "3"))
+# 最大排队数
+QUEUE_MAX_SIZE = int(_get_secret("LOGGAZER_QUEUE_MAX_SIZE", "20"))
+
+# --- GZip 压缩 (P1-2) ---
+# GZip 最小压缩阈值（字节），小于此值不压缩
+GZIP_MINIMUM_SIZE = int(_get_secret("GZIP_MINIMUM_SIZE", "1024"))
+
+# --- 前端渲染 (P1-1) ---
+# LTTB 降采样阈值（超过此数据点数时触发降采样）
+LTTB_THRESHOLD = int(_get_secret("LTTB_THRESHOLD", "500"))
+# 簇列表每页条数
+CLUSTER_PAGE_SIZE = int(_get_secret("CLUSTER_PAGE_SIZE", "5"))
+# CSS 文件缓存 TTL（秒）
+CSS_CACHE_TTL = int(_get_secret("CSS_CACHE_TTL", "3600"))
+# 趋势查询缓存 TTL（秒）
+TRENDING_CACHE_TTL = int(_get_secret("TRENDING_CACHE_TTL", "60"))
+
+# --- API 级 TTL 缓存 (P0-2) ---
+# API 响应缓存 TTL（秒）
+API_CACHE_TTL_SECONDS = int(_get_secret("API_CACHE_TTL_SECONDS", "300"))
+# API 响应缓存最大条目数
+API_CACHE_MAXSIZE = int(_get_secret("API_CACHE_MAXSIZE", "200"))
+
+# --- 重试与轮询 (P0-1) ---
+# 后端启动轮询最大次数
+BACKEND_POLL_MAX_ATTEMPTS = int(_get_secret("BACKEND_POLL_MAX_ATTEMPTS", "10"))
+# 后端启动轮询基础延迟（秒）
+BACKEND_POLL_BASE_DELAY = float(_get_secret("BACKEND_POLL_BASE_DELAY", "0.1"))
+# 后端启动轮询最大延迟（秒）
+BACKEND_POLL_MAX_DELAY = float(_get_secret("BACKEND_POLL_MAX_DELAY", "1.6"))
