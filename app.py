@@ -274,7 +274,7 @@ with st.sidebar:
     st.markdown("""
     <div style="padding: 8px 0 4px;">
         <div style="font-size: 1.2rem; font-weight: 700; color: #1a1a1a;">📋 LogGazer</div>
-        <div style="font-size: 0.78rem; color: #a3a3a3; margin-top: 2px;">v1.1.0</div>
+        <div style="font-size: 0.78rem; color: #a3a3a3; margin-top: 2px;">v1.1.1</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -617,10 +617,9 @@ if analyze_clicked:
         st.warning("请先粘贴日志内容")
     else:
         # ---- 后端健康检查 + 自动启动 ----
-        # 始终重新检查健康状态（后端可能在后台已启动完成）
-        if not st.session_state["backend_healthy"]:
-            health = check_backend_health()
-            st.session_state["backend_healthy"] = health is not None and health.get("status") in ("healthy", "degraded")
+        # 每次点击都重新检查健康状态，不使用缓存值（后端可能在页面加载后崩溃）
+        health = check_backend_health()
+        st.session_state["backend_healthy"] = health is not None and health.get("status") in ("healthy", "degraded")
 
         if not st.session_state["backend_healthy"]:
             backend_ready = False
@@ -776,7 +775,42 @@ if analyze_clicked:
             except ConnectionError as e:
                 if obs:
                     obs.record_error("network")
+                # 后端连接失败 — 重置状态并展示恢复面板
+                st.session_state["backend_healthy"] = False
                 st.error(f"连接错误：{str(e)}")
+                # 展示与健康检查相同的交互式恢复面板
+                st.warning(
+                    f"⚠️ **LogGazer Backend 未就绪**\n\n"
+                    f"无法连接到 `{BACKEND_URL}`。"
+                )
+                col_a, col_b, col_c = st.columns([1, 1, 2])
+                with col_a:
+                    if st.button("🚀 启动 Backend", type="primary", use_container_width=True, key="retry_start"):
+                        started = start_backend_process()
+                        if started:
+                            st.toast("正在启动...", icon="🚀")
+                            backend_ready = wait_for_backend(timeout=20.0)
+                            if backend_ready:
+                                st.session_state["backend_healthy"] = True
+                                st.toast("✅ Backend 已就绪", icon="✅")
+                                st.rerun()
+                            else:
+                                st.warning("Backend 仍在启动中，请稍后点击「重试」")
+                        else:
+                            st.error("启动失败，请检查 Python 环境")
+                with col_b:
+                    if st.button("🔄 重试连接", use_container_width=True, key="retry_reconnect"):
+                        health = check_backend_health()
+                        st.session_state["backend_healthy"] = health is not None and health.get("status") in ("healthy", "degraded")
+                        if st.session_state["backend_healthy"]:
+                            st.toast("✅ Backend 已就绪", icon="✅")
+                            st.rerun()
+                        else:
+                            st.toast("❌ 仍无法连接", icon="❌")
+                with col_c:
+                    st.caption(
+                        f"或手动运行: `{_get_python_command()} -m api.main`"
+                    )
                 st.stop()
             except Exception as e:
                 if obs:
