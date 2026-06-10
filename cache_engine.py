@@ -14,11 +14,13 @@
 import hashlib
 import json
 import logging
+import os
 import re
 import time
 from typing import Any, Optional
 
 from models import AnalysisResult, ParsedLog
+from utils.performance import timer
 
 logger = logging.getLogger(__name__)
 
@@ -206,89 +208,93 @@ class SemanticCache:
         if not self._available:
             return None
 
-        try:
-            from qdrant_client.models import FieldCondition, Filter, MatchValue
+        with timer("cache:检索", record=True):
+            try:
+                from qdrant_client.models import FieldCondition, Filter, MatchValue
 
-            # ---- 精确匹配（通过 payload 中的 fingerprint） ----
-            exact_results = self._client.scroll(
-                collection_name=self._collection_name,
-                scroll_filter=Filter(
-                    must=[
-                        FieldCondition(
-                            key="fingerprint",
-                            match=MatchValue(value=fingerprint),
-                        )
-                    ]
-                ),
-                limit=1,
-                with_payload=True,
-                with_vectors=False,
-            )
+                # ---- 精确匹配（通过 payload 中的 fingerprint） ----
+                with timer("cache:精确匹配查询"):
+                    exact_results = self._client.scroll(
+                        collection_name=self._collection_name,
+                        scroll_filter=Filter(
+                            must=[
+                                FieldCondition(
+                                    key="fingerprint",
+                                    match=MatchValue(value=fingerprint),
+                                )
+                            ]
+                        ),
+                        limit=1,
+                        with_payload=True,
+                        with_vectors=False,
+                    )
 
-            if exact_results[0]:
-                point = exact_results[0][0]
-                payload = point.payload
-                # 检查 TTL
-                created_at = payload.get("created_at", 0)
-                if time.time() - created_at > self._ttl_seconds:
-                    # 过期，删除
-                    self._delete_point(point.id)
+                if exact_results[0]:
+                    point = exact_results[0][0]
+                    payload = point.payload
+                    # 检查 TTL
+                    created_at = payload.get("created_at", 0)
+                    if time.time() - created_at > self._ttl_seconds:
+                        # 过期，删除
+                        self._delete_point(point.id)
+                        return None
+                    # 更新命中计数
+                    self._update_hit_count(point.id, payload)
+                    return self._deserialize_result(payload)
+
+                # ---- 向量相似度检索 ----
+                if not self._embedding_available:
                     return None
-                # 更新命中计数
-                self._update_hit_count(point.id, payload)
-                return self._deserialize_result(payload)
 
-            # ---- 向量相似度检索 ----
-            if not self._embedding_available:
-                return None
-
-            query_text = self._build_query_text(parsed_log)
-            query_vector = self._get_embedding(query_text)
-            if query_vector is None:
-                return None
-
-            # 按 platform 过滤
-            platform = parsed_log.get("platform", "Unknown")
-            search_results = self._client.query_points(
-                collection_name=self._collection_name,
-                query=query_vector,
-                query_filter=Filter(
-                    must=[
-                        FieldCondition(
-                            key="platform",
-                            match=MatchValue(value=platform),
-                        )
-                    ]
-                ),
-                limit=1,
-                with_payload=True,
-                with_vectors=False,
-                score_threshold=self._similarity_low,
-            )
-
-            if not search_results.points:
-                return None
-
-            top = search_results.points[0]
-            score = top.score
-
-            if score >= self._similarity_high:
-                # 高相似度，直接返回缓存结果
-                payload = top.payload
-                created_at = payload.get("created_at", 0)
-                if time.time() - created_at > self._ttl_seconds:
-                    self._delete_point(top.id)
+                query_text = self._build_query_text(parsed_log)
+                with timer("cache:Embedding计算"):
+                    query_vector = self._get_embedding(query_text)
+                if query_vector is None:
                     return None
-                self._update_hit_count(top.id, payload)
-                return self._deserialize_result(payload)
 
-            # score 在 [similarity_low, similarity_high) 之间
-            # 返回 None，调用方应使用 get_rag_context()
-            return None
+                # 按 platform 过滤
+                platform = parsed_log.get("platform", "Unknown")
+                with timer("cache:向量相似度检索"):
+                    search_results = self._client.query_points(
+                        collection_name=self._collection_name,
+                        query=query_vector,
+                        query_filter=Filter(
+                            must=[
+                                FieldCondition(
+                                    key="platform",
+                                    match=MatchValue(value=platform),
+                                )
+                            ]
+                        ),
+                        limit=1,
+                        with_payload=True,
+                        with_vectors=False,
+                        score_threshold=self._similarity_low,
+                    )
 
-        except Exception as e:
-            logger.warning("缓存检索失败，降级到直接分析: %s", e)
-            return None
+                if not search_results.points:
+                    return None
+
+                top = search_results.points[0]
+                score = top.score
+
+                if score >= self._similarity_high:
+                    # 高相似度，直接返回缓存结果
+                    payload = top.payload
+                    created_at = payload.get("created_at", 0)
+                    if time.time() - created_at > self._ttl_seconds:
+                        self._delete_point(top.id)
+                        return None
+                    self._update_hit_count(top.id, payload)
+                    return self._deserialize_result(payload)
+
+                # score 在 [similarity_low, similarity_high) 之间
+                # 返回 None，调用方应使用 get_rag_context()
+                return None
+
+            except Exception as e:
+                logger.warning("缓存检索失败，降级到直接分析: %s", e)
+                return None
 
     def set(
         self,
@@ -307,62 +313,63 @@ class SemanticCache:
         if not self._available:
             return
 
-        try:
-            from qdrant_client.models import PointStruct
+        with timer("cache:写入", record=True):
+            try:
+                from qdrant_client.models import PointStruct
 
-            # 序列化结果（兼容 Pydantic BaseModel 和 dict）
-            if hasattr(result, 'model_dump_json'):
-                serialized = result.model_dump_json()
-            else:
-                serialized = json.dumps(result, ensure_ascii=False)
+                # 序列化结果（兼容 Pydantic BaseModel 和 dict）
+                if hasattr(result, 'model_dump_json'):
+                    serialized = result.model_dump_json()
+                else:
+                    serialized = json.dumps(result, ensure_ascii=False)
 
-            # 生成向量
-            error_lines = metadata.get("error_lines", [])
-            platform = metadata.get("platform", "Unknown")
-            query_text = platform + "\n" + "\n".join(error_lines)
-            vector = self._get_embedding(query_text)
+                # 生成向量
+                error_lines = metadata.get("error_lines", [])
+                platform = metadata.get("platform", "Unknown")
+                query_text = platform + "\n" + "\n".join(error_lines)
+                vector = self._get_embedding(query_text)
 
-            if vector is None:
-                # Embedding 不可用，跳过写入
-                return
+                if vector is None:
+                    # Embedding 不可用，跳过写入
+                    return
 
-            # 构建 payload
-            payload: dict[str, Any] = {
-                "fingerprint": fingerprint,
-                "platform": platform,
-                "error_summary": result.get("error_summary", "")[:200],
-                "result_json": serialized,
-                "created_at": time.time(),
-                "hit_count": 1,
-                "confidence": 1.0,
-            }
+                # 构建 payload
+                payload: dict[str, Any] = {
+                    "fingerprint": fingerprint,
+                    "platform": platform,
+                    "error_summary": result.get("error_summary", "")[:200],
+                    "result_json": serialized,
+                    "created_at": time.time(),
+                    "hit_count": 1,
+                    "confidence": 1.0,
+                }
 
-            # 提取 fix_commands 用于 payload 索引
-            fix_suggestions = result.get("fix_suggestions", [])
-            payload["fix_commands"] = [
-                s.get("command", "") for s in fix_suggestions
-            ]
+                # 提取 fix_commands 用于 payload 索引
+                fix_suggestions = result.get("fix_suggestions", [])
+                payload["fix_commands"] = [
+                    s.get("command", "") for s in fix_suggestions
+                ]
 
-            # 生成唯一 ID
-            point_id = int(hashlib.md5(
-                fingerprint.encode()
-            ).hexdigest()[:16], 16) % (2**63)
+                # 生成唯一 ID
+                point_id = int(hashlib.md5(
+                    fingerprint.encode()
+                ).hexdigest()[:16], 16) % (2**63)
 
-            self._client.upsert(
-                collection_name=self._collection_name,
-                points=[
-                    PointStruct(
-                        id=point_id,
-                        vector=vector,
-                        payload=payload,
-                    )
-                ],
-            )
+                self._client.upsert(
+                    collection_name=self._collection_name,
+                    points=[
+                        PointStruct(
+                            id=point_id,
+                            vector=vector,
+                            payload=payload,
+                        )
+                    ],
+                )
 
-            logger.debug("缓存写入成功: fingerprint=%s", fingerprint[:16])
+                logger.debug("缓存写入成功: fingerprint=%s", fingerprint[:16])
 
-        except Exception as e:
-            logger.warning("缓存写入失败: %s", e)
+            except Exception as e:
+                logger.warning("缓存写入失败: %s", e)
 
     def get_rag_context(
         self, fingerprint: str, top_k: int = 3

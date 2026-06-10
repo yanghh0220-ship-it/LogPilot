@@ -14,6 +14,7 @@
 #   降级层：所有重试耗尽 → call_ai_legacy() + _best_effort_parse_to_model()
 
 import json
+import os
 import re
 import time
 import logging
@@ -34,6 +35,7 @@ from config import (
     CLAUDE_MODEL,
 )
 from cost_calculator import CostCalculator
+from utils.performance import timer
 
 
 # ============================================================
@@ -378,10 +380,11 @@ def call_ai_legacy(system_prompt: str, user_prompt: str) -> str:
         )
 
     try:
-        if AI_PROVIDER == "claude":
-            result_text: str = _call_claude(system_prompt, user_prompt)
-        else:
-            result_text = _call_openai_compatible(system_prompt, user_prompt)
+        with timer("ai_engine:API调用(legacy)", record=True):
+            if AI_PROVIDER == "claude":
+                result_text: str = _call_claude(system_prompt, user_prompt)
+            else:
+                result_text = _call_openai_compatible(system_prompt, user_prompt)
 
         logger.info(f"AI 调用成功，返回内容长度：{len(result_text)} 字符")
         return result_text
@@ -604,16 +607,17 @@ def call_ai_structured(
 
     # 使用 Instructor 进行结构化生成
     try:
-        result = client.chat.completions.create(
-            model=DEEPSEEK_MODEL,
-            response_model=AnalysisResult,
-            max_retries=max_retries,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=DEEPSEEK_TEMPERATURE,
-        )
+        with timer("ai_engine:结构化生成(Instructor)", record=True):
+            result = client.chat.completions.create(
+                model=DEEPSEEK_MODEL,
+                response_model=AnalysisResult,
+                max_retries=max_retries,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=DEEPSEEK_TEMPERATURE,
+            )
         logger.info("结构化生成成功")
         return result
 

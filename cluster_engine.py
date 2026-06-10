@@ -19,6 +19,7 @@
 
 import json
 import logging
+import os
 import sqlite3
 import zlib
 from datetime import datetime, timedelta
@@ -27,6 +28,7 @@ from typing import Any, Optional
 from datasketch import MinHash, MinHashLSH
 
 from fingerprint_engine import FingerprintEngine
+from utils.performance import timer
 
 logger = logging.getLogger(__name__)
 
@@ -204,34 +206,35 @@ class ClusterEngine:
         platform: str = fingerprint["platform"]
         sha256: str = fingerprint["sha256"]
 
-        # 1. 查询 LSH 近似邻居
-        candidates = self.lsh.query(minhash)
+        with timer("cluster:分配簇", record=True):
+            # 1. 查询 LSH 近似邻居
+            candidates = self.lsh.query(minhash)
 
-        best_cluster_id: Optional[int] = None
-        best_similarity: float = 0.0
+            best_cluster_id: Optional[int] = None
+            best_similarity: float = 0.0
 
-        # 2. 精确 Jaccard 相似度计算
-        for key in candidates:
-            if not key.startswith("cluster_"):
-                continue
-            cid = int(key.split("_", 1)[1])
-            center = self._cluster_centers.get(cid)
-            if center is None:
-                continue
-            similarity = minhash.jaccard(center)
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_cluster_id = cid
+            # 2. 精确 Jaccard 相似度计算
+            for key in candidates:
+                if not key.startswith("cluster_"):
+                    continue
+                cid = int(key.split("_", 1)[1])
+                center = self._cluster_centers.get(cid)
+                if center is None:
+                    continue
+                similarity = minhash.jaccard(center)
+                if similarity > best_similarity:
+                    best_similarity = similarity
+                    best_cluster_id = cid
 
-        # 3. 分配或创建簇
-        if best_cluster_id is not None and best_similarity >= self.threshold:
-            cluster_id = best_cluster_id
-            self._update_cluster_stats(cluster_id, fingerprint)
-        else:
-            cluster_id = self._create_cluster(fingerprint)
+            # 3. 分配或创建簇
+            if best_cluster_id is not None and best_similarity >= self.threshold:
+                cluster_id = best_cluster_id
+                self._update_cluster_stats(cluster_id, fingerprint)
+            else:
+                cluster_id = self._create_cluster(fingerprint)
 
-        # 4. 存储分析日志
-        self._store_analysis_log(fingerprint, cluster_id)
+            # 4. 存储分析日志
+            self._store_analysis_log(fingerprint, cluster_id)
 
         return cluster_id
 
@@ -382,54 +385,55 @@ class ClusterEngine:
             result: AnalysisResult 实例或 dict
             cluster_id: 分配的簇 ID
         """
-        conn = self._get_conn()
-        try:
-            # 压缩原始日志（>10KB 时）
-            raw_log_compressed = None
-            if len(raw_log) > 10240:
-                raw_log_compressed = _compress_text(raw_log)
+        with timer("cluster:DB存储", record=True):
+            conn = self._get_conn()
+            try:
+                # 压缩原始日志（>10KB 时）
+                raw_log_compressed = None
+                if len(raw_log) > 10240:
+                    raw_log_compressed = _compress_text(raw_log)
 
-            # 序列化分析结果
-            if hasattr(result, "model_dump_json"):
-                result_json = result.model_dump_json()
-            else:
-                result_json = json.dumps(result, ensure_ascii=False, default=str)
+                # 序列化分析结果
+                if hasattr(result, "model_dump_json"):
+                    result_json = result.model_dump_json()
+                else:
+                    result_json = json.dumps(result, ensure_ascii=False, default=str)
 
-            # 先尝试更新（assign_cluster 可能已插入基础行）
-            cursor = conn.execute(
-                "UPDATE analysis_log SET "
-                "raw_log_compressed = ?, "
-                "analysis_result_json = ?, "
-                "cluster_id = ? "
-                "WHERE raw_log_hash = ?",
-                (
-                    raw_log_compressed,
-                    result_json,
-                    cluster_id,
-                    fingerprint["sha256"],
-                ),
-            )
-
-            if cursor.rowcount == 0:
-                # 不存在，插入新行
-                conn.execute(
-                    "INSERT INTO analysis_log "
-                    "(error_fingerprint, raw_log_hash, raw_log_compressed, "
-                    "platform, analysis_result_json, cluster_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                # 先尝试更新（assign_cluster 可能已插入基础行）
+                cursor = conn.execute(
+                    "UPDATE analysis_log SET "
+                    "raw_log_compressed = ?, "
+                    "analysis_result_json = ?, "
+                    "cluster_id = ? "
+                    "WHERE raw_log_hash = ?",
                     (
-                        fingerprint["normalized"],
-                        fingerprint["sha256"],
                         raw_log_compressed,
-                        fingerprint["platform"],
                         result_json,
                         cluster_id,
+                        fingerprint["sha256"],
                     ),
                 )
 
-            conn.commit()
-        finally:
-            conn.close()
+                if cursor.rowcount == 0:
+                    # 不存在，插入新行
+                    conn.execute(
+                        "INSERT INTO analysis_log "
+                        "(error_fingerprint, raw_log_hash, raw_log_compressed, "
+                        "platform, analysis_result_json, cluster_id) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (
+                            fingerprint["normalized"],
+                            fingerprint["sha256"],
+                            raw_log_compressed,
+                            fingerprint["platform"],
+                            result_json,
+                            cluster_id,
+                        ),
+                    )
+
+                conn.commit()
+            finally:
+                conn.close()
 
     def mark_resolved(
         self, raw_log_hash: str, resolution_status: str = "resolved"

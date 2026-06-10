@@ -22,10 +22,12 @@
 # Word 级对拼写变化敏感（如 "ERESOLVE" vs "ERESOLV"），语义 Embedding 依赖太重。
 
 import hashlib
+import os
 import re
 from typing import Any, Optional
 
 from datasketch import MinHash
+from utils.performance import timer
 
 
 # ============================================================
@@ -221,13 +223,16 @@ class FingerprintEngine:
             }
         """
         # 1. 标准化
-        normalized = self.normalize(error_lines)
+        with timer("fingerprint:文本标准化"):
+            normalized = self.normalize(error_lines)
 
         # 2. 骨架化
-        skeleton = self.extract_skeleton(normalized)
+        with timer("fingerprint:骨架提取"):
+            skeleton = self.extract_skeleton(normalized)
 
         # 3. MinHash 签名（基于骨架文本）
-        minhash = self.compute_minhash(skeleton if skeleton else normalized)
+        with timer("fingerprint:MinHash计算"):
+            minhash = self.compute_minhash(skeleton if skeleton else normalized)
 
         # 4. 原始日志 SHA256（用于 DB 去重）
         raw_key = platform + "\n" + "\n".join(error_lines)

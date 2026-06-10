@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
 from typing import Any, Literal, TypedDict
@@ -32,6 +33,7 @@ from agent_prompts import (
     build_analyzer_user_prompt,
     human_review_prompt,
 )
+from utils.performance import timer
 
 logger = logging.getLogger(__name__)
 
@@ -102,37 +104,38 @@ def router_node(state: AgentState) -> AgentState:
     返回:
         更新后的 AgentState（route_decision, platform）
     """
-    parsed = state.get("parsed_log", {})
-    platform = parsed.get("platform", "Unknown")
-    error_lines = parsed.get("error_lines", [])
-    truncated_log = parsed.get("truncated_log", "")
+    with timer("agent_graph:Router节点"):
+        parsed = state.get("parsed_log", {})
+        platform = parsed.get("platform", "Unknown")
+        error_lines = parsed.get("error_lines", [])
+        truncated_log = parsed.get("truncated_log", "")
 
-    # 极简日志（<3 行有效内容）→ 降级
-    effective_lines = [l for l in truncated_log.split("\n") if l.strip()]
-    if len(effective_lines) < 3:
-        logger.info("[Router] 日志过短 (%d 行)，走 fallback", len(effective_lines))
+        # 极简日志（<3 行有效内容）→ 降级
+        effective_lines = [l for l in truncated_log.split("\n") if l.strip()]
+        if len(effective_lines) < 3:
+            logger.info("[Router] 日志过短 (%d 行)，走 fallback", len(effective_lines))
+            return {
+                "route_decision": "fallback",
+                "platform": platform,
+                "iteration_count": 0,
+            }
+
+        # 平台识别失败 → 降级
+        if platform == "Unknown":
+            logger.info("[Router] 平台未识别，走 fallback")
+            return {
+                "route_decision": "fallback",
+                "platform": platform,
+                "iteration_count": 0,
+            }
+
+        # 正常路由
+        logger.info("[Router] 平台=%s，走 Agent 链路", platform)
         return {
-            "route_decision": "fallback",
+            "route_decision": "analyze",
             "platform": platform,
             "iteration_count": 0,
         }
-
-    # 平台识别失败 → 降级
-    if platform == "Unknown":
-        logger.info("[Router] 平台未识别，走 fallback")
-        return {
-            "route_decision": "fallback",
-            "platform": platform,
-            "iteration_count": 0,
-        }
-
-    # 正常路由
-    logger.info("[Router] 平台=%s，走 Agent 链路", platform)
-    return {
-        "route_decision": "analyze",
-        "platform": platform,
-        "iteration_count": 0,
-    }
 
 
 # ============================================================
@@ -184,38 +187,39 @@ def analyzer_node(state: AgentState) -> AgentState:
     )
 
     # 调用 AI
-    try:
-        from ai_engine import call_ai_structured
-        result = call_ai_structured(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_retries=2,
-        )
+    with timer("agent_graph:Analyzer节点(AI调用)", record=True):
+        try:
+            from ai_engine import call_ai_structured
+            result = call_ai_structured(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_retries=2,
+            )
 
-        # 确保是 dict
-        if isinstance(result, AnalysisResult):
-            analysis_dict = result.model_dump()
-        elif isinstance(result, dict):
-            analysis_dict = result
-        else:
-            analysis_dict = {}
+            # 确保是 dict
+            if isinstance(result, AnalysisResult):
+                analysis_dict = result.model_dump()
+            elif isinstance(result, dict):
+                analysis_dict = result
+            else:
+                analysis_dict = {}
 
-        # 提取所有 bash 命令
-        commands = _extract_commands(analysis_dict)
+            # 提取所有 bash 命令
+            commands = _extract_commands(analysis_dict)
 
-        logger.info("[Analyzer] 分析完成，提取到 %d 条命令", len(commands))
-        return {
-            "analysis_draft": analysis_dict,
-            "fix_commands": commands,
-            "iteration_count": iteration,
-        }
+            logger.info("[Analyzer] 分析完成，提取到 %d 条命令", len(commands))
+            return {
+                "analysis_draft": analysis_dict,
+                "fix_commands": commands,
+                "iteration_count": iteration,
+            }
 
-    except Exception as e:
-        logger.error("[Analyzer] AI 调用失败: %s: %s", type(e).__name__, str(e)[:200])
-        return {
-            "iteration_count": iteration,
-            "error_message": f"Analyzer AI 调用失败: {type(e).__name__}: {str(e)[:200]}",
-        }
+        except Exception as e:
+            logger.error("[Analyzer] AI 调用失败: %s: %s", type(e).__name__, str(e)[:200])
+            return {
+                "iteration_count": iteration,
+                "error_message": f"Analyzer AI 调用失败: {type(e).__name__}: {str(e)[:200]}",
+            }
 
 
 def _extract_commands(analysis: dict) -> list[str]:
@@ -256,65 +260,66 @@ def validator_node(state: AgentState) -> AgentState:
     返回:
         更新后的 AgentState（validation_result, needs_retry, human_review_needed）
     """
-    commands = state.get("fix_commands", [])
-    iteration = state.get("iteration_count", 0)
+    with timer("agent_graph:Validator节点"):
+        commands = state.get("fix_commands", [])
+        iteration = state.get("iteration_count", 0)
 
-    if not commands:
-        logger.info("[Validator] 无命令需要校验")
-        return {
-            "validation_result": {
-                "overall_safety": "safe",
-                "details": [],
-                "summary": "无命令需要校验",
-            },
-            "needs_retry": False,
-            "human_review_needed": False,
-        }
+        if not commands:
+            logger.info("[Validator] 无命令需要校验")
+            return {
+                "validation_result": {
+                    "overall_safety": "safe",
+                    "details": [],
+                    "summary": "无命令需要校验",
+                },
+                "needs_retry": False,
+                "human_review_needed": False,
+            }
 
-    # 执行安全校验
-    result = validate_command_safety(commands)
-    overall_safety = result.get("overall_safety", "safe")
+        # 执行安全校验
+        result = validate_command_safety(commands)
+        overall_safety = result.get("overall_safety", "safe")
 
-    logger.info(
-        "[Validator] 校验完成: overall=%s, summary=%s",
-        overall_safety, result.get("summary", ""),
-    )
+        logger.info(
+            "[Validator] 校验完成: overall=%s, summary=%s",
+            overall_safety, result.get("summary", ""),
+        )
 
-    # 决定下一步
-    needs_retry = False
-    human_review_needed = False
+        # 决定下一步
+        needs_retry = False
+        human_review_needed = False
 
-    if overall_safety == "dangerous":
-        # 检查是否已达迭代上限
-        if iteration >= MAX_ITERATIONS:
-            # 达到上限，强制进入人工审查
+        if overall_safety == "dangerous":
+            # 检查是否已达迭代上限
+            if iteration >= MAX_ITERATIONS:
+                # 达到上限，强制进入人工审查
+                human_review_needed = True
+                logger.warning("[Validator] 存在 dangerous 命令且迭代上限已达，进入人工审查")
+            else:
+                # 未达上限，触发重试（让 Analyzer 生成更安全的命令）
+                needs_retry = True
+                logger.info("[Validator] 存在 dangerous 命令，触发重试 (iteration=%d)", iteration)
+
+        elif overall_safety == "review":
             human_review_needed = True
-            logger.warning("[Validator] 存在 dangerous 命令且迭代上限已达，进入人工审查")
-        else:
-            # 未达上限，触发重试（让 Analyzer 生成更安全的命令）
-            needs_retry = True
-            logger.info("[Validator] 存在 dangerous 命令，触发重试 (iteration=%d)", iteration)
+            logger.info("[Validator] 存在 review 命令，需要人工审查")
 
-    elif overall_safety == "review":
-        human_review_needed = True
-        logger.info("[Validator] 存在 review 命令，需要人工审查")
+        # 生成人工审查提示词
+        review_prompt = ""
+        if human_review_needed:
+            dangerous_cmds = [
+                d for d in result.get("details", [])
+                if d.get("safety_level") in ("dangerous", "review")
+            ]
+            summary = state.get("analysis_draft", {}).get("error_summary", "无摘要")
+            review_prompt = human_review_prompt(dangerous_cmds, summary)
 
-    # 生成人工审查提示词
-    review_prompt = ""
-    if human_review_needed:
-        dangerous_cmds = [
-            d for d in result.get("details", [])
-            if d.get("safety_level") in ("dangerous", "review")
-        ]
-        summary = state.get("analysis_draft", {}).get("error_summary", "无摘要")
-        review_prompt = human_review_prompt(dangerous_cmds, summary)
-
-    return {
-        "validation_result": result,
-        "needs_retry": needs_retry,
-        "human_review_needed": human_review_needed,
-        "human_review_prompt": review_prompt,
-    }
+        return {
+            "validation_result": result,
+            "needs_retry": needs_retry,
+            "human_review_needed": human_review_needed,
+            "human_review_prompt": review_prompt,
+        }
 
 
 # ============================================================
@@ -334,67 +339,68 @@ def summarizer_node(state: AgentState) -> AgentState:
     返回:
         更新后的 AgentState（final_report）
     """
-    analysis = state.get("analysis_draft", {})
-    validation = state.get("validation_result", {})
-    iteration = state.get("iteration_count", 0)
-    error_message = state.get("error_message", "")
+    with timer("agent_graph:Summarizer节点"):
+        analysis = state.get("analysis_draft", {})
+        validation = state.get("validation_result", {})
+        iteration = state.get("iteration_count", 0)
+        error_message = state.get("error_message", "")
 
-    # 如果没有分析结果（Analyzer 失败），生成降级结果
-    if not analysis:
-        logger.warning("[Summarizer] 无分析结果，生成降级报告")
-        fallback_result = _create_fallback_report(
-            error_message or "分析过程异常，无法获取结果"
-        )
-        return {"final_report": fallback_result}
+        # 如果没有分析结果（Analyzer 失败），生成降级结果
+        if not analysis:
+            logger.warning("[Summarizer] 无分析结果，生成降级报告")
+            fallback_result = _create_fallback_report(
+                error_message or "分析过程异常，无法获取结果"
+            )
+            return {"final_report": fallback_result}
 
-    # 更新 fix_suggestions 中的 safety_level
-    validation_details = validation.get("details", [])
-    cmd_safety_map = {d["command"]: d for d in validation_details}
+        # 更新 fix_suggestions 中的 safety_level
+        validation_details = validation.get("details", [])
+        cmd_safety_map = {d["command"]: d for d in validation_details}
 
-    fix_suggestions = analysis.get("fix_suggestions", [])
-    for fix in fix_suggestions:
-        cmd = fix.get("command", "")
-        if cmd in cmd_safety_map:
-            fix["safety_level"] = cmd_safety_map[cmd]["safety_level"]
+        fix_suggestions = analysis.get("fix_suggestions", [])
+        for fix in fix_suggestions:
+            cmd = fix.get("command", "")
+            if cmd in cmd_safety_map:
+                fix["safety_level"] = cmd_safety_map[cmd]["safety_level"]
 
-    # 构建 security_warning
-    security_warning = ""
-    if validation.get("overall_safety") in ("dangerous", "review"):
-        dangerous_cmds = [
-            d for d in validation_details
-            if d.get("safety_level") in ("dangerous", "review")
-        ]
-        if dangerous_cmds:
-            warning_lines = ["⚠️ 以下命令存在安全风险，请人工审查后执行："]
-            for d in dangerous_cmds:
-                level_emoji = "🔴" if d["safety_level"] == "dangerous" else "🟡"
-                warning_lines.append(
-                    f"- {level_emoji} `{d['command']}`: {d.get('reason', 'N/A')}"
-                )
-            security_warning = "\n".join(warning_lines)
+        # 构建 security_warning
+        security_warning = ""
+        if validation.get("overall_safety") in ("dangerous", "review"):
+            dangerous_cmds = [
+                d for d in validation_details
+                if d.get("safety_level") in ("dangerous", "review")
+            ]
+            if dangerous_cmds:
+                warning_lines = ["⚠️ 以下命令存在安全风险，请人工审查后执行："]
+                for d in dangerous_cmds:
+                    level_emoji = "🔴" if d["safety_level"] == "dangerous" else "🟡"
+                    warning_lines.append(
+                        f"- {level_emoji} `{d['command']}`: {d.get('reason', 'N/A')}"
+                    )
+                security_warning = "\n".join(warning_lines)
 
-    # 附加迭代上限警告
-    if iteration >= MAX_ITERATIONS:
-        security_warning += (
-            f"\n\n⚠️ 已达到最大迭代次数 ({MAX_ITERATIONS})，"
-            "分析结果可能不完整，请人工审查。"
-        )
+        # 附加迭代上限警告
+        if iteration >= MAX_ITERATIONS:
+            security_warning += (
+                f"\n\n⚠️ 已达到最大迭代次数 ({MAX_ITERATIONS})，"
+                "分析结果可能不完整，请人工审查。"
+            )
 
-    # 构建最终报告
-    final_report = {
-        **analysis,
-        "fix_suggestions": fix_suggestions,
-        "security_warning": security_warning,
-    }
+        # 构建最终报告
+        final_report = {
+            **analysis,
+            "fix_suggestions": fix_suggestions,
+            "security_warning": security_warning,
+        }
 
-    # 验证报告格式（尝试 Pydantic 校验）
-    try:
-        AnalysisResult.model_validate(final_report)
-    except Exception as e:
-        logger.warning("[Summarizer] 报告校验失败，尝试修复: %s", e)
-        final_report = _repair_report(final_report, str(e))
+        # 验证报告格式（尝试 Pydantic 校验）
+        try:
+            AnalysisResult.model_validate(final_report)
+        except Exception as e:
+            logger.warning("[Summarizer] 报告校验失败，尝试修复: %s", e)
+            final_report = _repair_report(final_report, str(e))
 
-    return {"final_report": final_report}
+        return {"final_report": final_report}
 
 
 def _create_fallback_report(warning: str) -> dict:
@@ -499,32 +505,33 @@ def fallback_node(state: AgentState) -> AgentState:
 
     目标：300ms 内完成降级
     """
-    logger.info("[Fallback] 使用降级路径分析日志")
-    log_text = state.get("log_text", "")
+    with timer("agent_graph:Fallback节点"):
+        logger.info("[Fallback] 使用降级路径分析日志")
+        log_text = state.get("log_text", "")
 
-    try:
-        from analyzer import analyze_log
-        result = analyze_log(log_text)
+        try:
+            from analyzer import analyze_log
+            result = analyze_log(log_text)
 
-        if isinstance(result, AnalysisResult):
-            report = result.model_dump()
-        elif isinstance(result, dict):
-            report = result
-        else:
-            report = _create_fallback_report("降级分析结果类型异常")
+            if isinstance(result, AnalysisResult):
+                report = result.model_dump()
+            elif isinstance(result, dict):
+                report = result
+            else:
+                report = _create_fallback_report("降级分析结果类型异常")
 
-        return {
-            "final_report": report,
-            "fallback_used": True,
-        }
+            return {
+                "final_report": report,
+                "fallback_used": True,
+            }
 
-    except Exception as e:
-        logger.error("[Fallback] 降级分析也失败: %s", e)
-        return {
-            "final_report": _create_fallback_report(f"降级分析失败: {type(e).__name__}"),
-            "fallback_used": True,
-            "error_message": f"降级分析失败: {type(e).__name__}: {str(e)[:200]}",
-        }
+        except Exception as e:
+            logger.error("[Fallback] 降级分析也失败: %s", e)
+            return {
+                "final_report": _create_fallback_report(f"降级分析失败: {type(e).__name__}"),
+                "fallback_used": True,
+                "error_message": f"降级分析失败: {type(e).__name__}: {str(e)[:200]}",
+            }
 
 
 # ============================================================
