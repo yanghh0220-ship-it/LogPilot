@@ -150,6 +150,11 @@ def call_analyze_via_api(log_text: str) -> dict:
 
 
 # ============================================
+#  BackendManager 初始化（尽早初始化，供 sidebar 使用）
+# ============================================
+manager = _get_backend_manager()
+
+# ============================================
 # 页面配置
 # ============================================
 st.set_page_config(
@@ -242,6 +247,22 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.markdown("---")
+
+    # Backend status indicator — use manager directly (sidebar renders before backend_healthy is assigned)
+    _backend_ok = manager.is_backend_running()
+    if _backend_ok:
+        st.markdown(
+            '<div style="font-size: 0.75rem; color: #22c55e;">'
+            '🟢 Backend 运行中</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div style="font-size: 0.75rem; color: #ef4444;">'
+            '🔴 Backend 未连接</div>',
+            unsafe_allow_html=True,
+        )
+
     st.markdown("""
     <div style="font-size: 0.75rem; color: #a3a3a3;">
         Made with care by LogGazer
@@ -434,7 +455,7 @@ tests/test_auth.py:15: AssertionError
 # BackendManager 使用 PID 文件 + 端口检测判断后端状态，
 # 不依赖 session_state，因此 F5 刷新 / Streamlit rerun 都不会
 # 导致状态丢失或错误。
-manager = _get_backend_manager()
+# （manager 实例已在文件顶部通过 _get_backend_manager() 初始化）
 
 # 页面加载时同步确保后端就绪（带短暂等待，避免用户立刻点击时后端未就绪）
 # 使用较短的 timeout，避免页面加载过慢；若未就绪，用户点击分析时会再次等待。

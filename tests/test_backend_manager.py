@@ -238,6 +238,26 @@ class TestEnsureBackend:
                 }):
                     assert manager.ensure_backend(timeout=0.1)
 
+    def test_existing_process_just_waits(self, manager):
+        """When PID file exists with live process, do NOT start another — just wait."""
+        manager._write_pid_file(12345)
+        with patch.object(manager, "is_backend_running", return_value=False):
+            with patch("backend_manager._is_pid_alive", return_value=True):
+                with patch.object(manager, "_wait_for_backend", return_value=True) as mock_wait:
+                    # Should NOT call _start_backend — should just wait
+                    assert manager.ensure_backend(timeout=5.0)
+                    mock_wait.assert_called_once()
+                    # _start_backend should NOT have been called
+                    assert manager._read_pid_file() == 12345  # PID unchanged
+
+    def test_existing_process_wait_timeout(self, manager):
+        """PID file exists with live process but wait times out → returns False."""
+        manager._write_pid_file(12345)
+        with patch.object(manager, "is_backend_running", return_value=False):
+            with patch("backend_manager._is_pid_alive", return_value=True):
+                with patch.object(manager, "_wait_for_backend", return_value=False):
+                    assert not manager.ensure_backend(timeout=1.0)
+
 
 # ============================================================
 #  BackendManager._start_backend Tests

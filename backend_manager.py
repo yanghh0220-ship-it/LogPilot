@@ -100,9 +100,32 @@ def check_backend_health(url: str | None = None) -> dict | None:
     """
     Check if the LogGazer Backend is reachable and healthy.
 
+    First tries the fast /healthz liveness probe, then falls back
+    to the deep /v1/health check for detailed status.
+
     Returns the health check response dict, or None if unreachable.
     """
     backend_url = (url or DEFAULT_BACKEND_URL).rstrip("/")
+    try:
+        with httpx.Client(timeout=HEALTH_CHECK_TIMEOUT) as client:
+            # Fast path: /healthz is a minimal liveness probe (no DB/Redis checks)
+            resp = client.get(f"{backend_url}/healthz")
+            if resp.is_success:
+                liveness = resp.json()
+                # If we only got liveness, try the deep check for full status
+                if liveness.get("status") == "ok":
+                    try:
+                        deep = client.get(f"{backend_url}/v1/health")
+                        deep.raise_for_status()
+                        return deep.json()
+                    except Exception:
+                        # Deep check failed but server is alive — return liveness
+                        return {"status": "healthy", "checks": {}, "version": "?"}
+                return liveness
+    except Exception:
+        pass
+
+    # Fallback: try deep check directly
     try:
         with httpx.Client(timeout=HEALTH_CHECK_TIMEOUT) as client:
             resp = client.get(f"{backend_url}/v1/health")
@@ -180,12 +203,32 @@ class BackendManager:
 
         This is the primary entry point — call it before any API request.
         """
-        # 1. Already running?
+        # 1. Already running and healthy?
         if self.is_backend_running():
             logger.info("Backend is already running and healthy.")
             return True
 
-        # 2. Port in use by something else?
+        # 2. Is a backend process already starting (PID file exists + process alive)?
+        existing_pid = self._read_pid_file()
+        if existing_pid is not None and _is_pid_alive(existing_pid):
+            # A previous start attempt is still in progress.
+            # DO NOT start another process — just wait for this one.
+            logger.info(
+                "Backend process already starting (PID: %d). Waiting...",
+                existing_pid,
+            )
+            ready = self._wait_for_backend(timeout=timeout)
+            if ready:
+                logger.info("Existing backend process is now healthy.")
+            else:
+                logger.error(
+                    "Existing backend process (PID: %d) did not become "
+                    "healthy within %.0fs.",
+                    existing_pid, timeout,
+                )
+            return ready
+
+        # 3. Port in use by something else?
         if _is_port_in_use(self._host, self._port):
             # Something is on our port — check if it's LogGazer
             health = check_backend_health(self._backend_url)
@@ -201,14 +244,14 @@ class BackendManager:
                 )
                 # We'll still try to start — uvicorn will report "Address already in use"
 
-        # 3. Start backend
+        # 4. No existing process — start a fresh one
         logger.info("Starting LogGazer backend...")
         success = self._start_backend()
         if not success:
             logger.error("Failed to start backend process.")
             return False
 
-        # 4. Wait for it to be healthy
+        # 5. Wait for it to be healthy
         ready = self._wait_for_backend(timeout=timeout)
         if ready:
             logger.info("Backend is ready at %s", self._backend_url)
