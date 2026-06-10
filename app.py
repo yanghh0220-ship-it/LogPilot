@@ -97,14 +97,42 @@ def _get_python_command() -> str:
     return sys.executable
 
 
+def _is_pid_alive(pid: int) -> bool:
+    """Check if a process with the given PID is still running (cross-platform)."""
+    try:
+        if sys.platform == "win32":
+            # Windows: try to open process with SYNCHRONIZE access
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            SYNCHRONIZE = 0x00100000
+            handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+            if handle:
+                kernel32.CloseHandle(handle)
+                return True
+            return False
+        else:
+            # Unix: signal 0 is a no-op that checks existence
+            os.kill(pid, 0)
+            return True
+    except (OSError, ProcessLookupError, Exception):
+        return False
+
+
 def start_backend_process() -> bool:
     """
     Start the LogGazer FastAPI backend as a background subprocess.
 
     Returns True if the process was started successfully, False otherwise.
     """
+    # If already starting, check if the previous process is still alive
     if st.session_state.get("backend_starting"):
-        return False  # Already attempting to start
+        prev_pid = st.session_state.get("backend_pid")
+        if prev_pid and not _is_pid_alive(prev_pid):
+            # Previous process died — reset and allow restart
+            st.session_state["backend_starting"] = False
+            st.session_state["backend_pid"] = None
+        else:
+            return False  # Still starting or can't determine
 
     python_cmd = _get_python_command()
     backend_script = os.path.join(PROJECT_DIR, "api", "main.py")
@@ -112,6 +140,9 @@ def start_backend_process() -> bool:
     if not os.path.exists(backend_script):
         st.error(f"未找到后端入口文件: {backend_script}")
         return False
+
+    # Log file for backend stderr (debugging startup failures)
+    backend_log = os.path.join(PROJECT_DIR, ".backend_stderr.log")
 
     st.session_state["backend_starting"] = True
 
@@ -123,18 +154,21 @@ def start_backend_process() -> bool:
         if sys.platform == "win32":
             creationflags = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore
 
+        log_fp = open(backend_log, "w")
         proc = subprocess.Popen(
             [python_cmd, "-m", "api.main"],
             cwd=PROJECT_DIR,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_fp,
+            stderr=log_fp,
             start_new_session=True if sys.platform != "win32" else False,
             creationflags=creationflags if sys.platform == "win32" else 0,
         )
+        log_fp.close()  # Child has its own copy; close parent's handle
         st.session_state["backend_pid"] = proc.pid
         return True
     except Exception as e:
         st.session_state["backend_starting"] = False
+        st.session_state["backend_pid"] = None
         st.error(f"启动后端失败: {e}")
         return False
 
@@ -604,15 +638,39 @@ if analyze_clicked:
                     else:
                         st.toast("⏳ Backend 启动较慢，请稍候点击「重试」", icon="⏳")
             else:
-                # 后台已在启动中（由页面加载时触发）— 再等待一会儿
-                st.toast("⏳ Backend 正在启动中，请稍候...", icon="⏳")
-                backend_ready = wait_for_backend(timeout=10.0)
-                if backend_ready:
-                    st.toast("✅ Backend 已就绪", icon="✅")
-                    st.session_state["backend_healthy"] = True
-                    st.rerun()
+                # 后台已在启动中（由页面加载时触发）
+                prev_pid = st.session_state.get("backend_pid")
+                if prev_pid and not _is_pid_alive(prev_pid):
+                    # 进程已死 — 读取日志并重试
+                    st.session_state["backend_starting"] = False
+                    st.session_state["backend_pid"] = None
+                    backend_log = os.path.join(PROJECT_DIR, ".backend_stderr.log")
+                    if os.path.exists(backend_log):
+                        log_content = open(backend_log, "r").read().strip()
+                        if log_content:
+                            with st.expander("🔍 查看后端启动日志", expanded=False):
+                                st.code(log_content[-2000:], language="text")
+                    # 重试启动
+                    started = start_backend_process()
+                    if started:
+                        st.toast("🔄 Backend 进程已退出，正在重新启动...", icon="🔄")
+                        backend_ready = wait_for_backend(timeout=15.0)
+                        if backend_ready:
+                            st.toast("✅ Backend 已就绪", icon="✅")
+                            st.session_state["backend_healthy"] = True
+                            st.rerun()
+                        else:
+                            st.toast("⏳ Backend 启动较慢，请稍候点击「重试」", icon="⏳")
                 else:
-                    st.toast("⏳ Backend 仍在启动中...", icon="⏳")
+                    # 进程仍在运行 — 等待它完成初始化
+                    st.toast("⏳ Backend 正在启动中，请稍候...", icon="⏳")
+                    backend_ready = wait_for_backend(timeout=10.0)
+                    if backend_ready:
+                        st.toast("✅ Backend 已就绪", icon="✅")
+                        st.session_state["backend_healthy"] = True
+                        st.rerun()
+                    else:
+                        st.toast("⏳ Backend 仍在启动中...", icon="⏳")
 
             # 后端仍未就绪 — 显示交互式恢复面板
             if not st.session_state["backend_healthy"]:
