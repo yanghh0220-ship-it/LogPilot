@@ -224,6 +224,73 @@ CACHE_EMBEDDING_MODEL=all-MiniLM-L6-v2  # Embedding 模型
 
 ---
 
+## ⚡ 性能优化 (v1.2)
+
+LogGazer 经过三轮系统性能优化（P0/P1/P2），显著提升用户体验和系统效率。
+
+### 性能提升概览
+
+| 指标 | 优化前 | 优化后 | 提升 |
+|------|--------|--------|------|
+| 页面加载（冷启动） | ~8s 白屏阻塞 | <1s UI 立即可见 | >8x |
+| 二次分析（相同内容） | ~0.58ms 重新解析 | ~0.005ms 缓存命中 | 111x |
+| get_error_stats 缓存命中 | ~0.35ms | ~0.001ms | 350x |
+| detect_platform 缓存命中 | 0.028ms | 0.0002ms | 141x |
+| LTTB 图表降采样 (1200→500点) | — | 0.66ms | 🆕 |
+| 增量分析检查 | — | 0.0023ms | 🆕 |
+| GZip 响应压缩 | — | 60-80% 体积缩减 | 🆕 |
+| AI 调用超时保护 | 无限制 | 120s 自动返回 504 | 🆕 |
+| 并发保护 | 无限制（OOM 风险） | 3并发 + 20队列 | 🆕 |
+
+### 优化架构
+
+```
+P0 核心层（启动/缓存/算法）
+├── P0-1 消除启动白屏 — 异步后端启动 + 指数退避轮询
+├── P0-2 核心缓存体系 — 内容Hash缓存 (TTLCache) + API级缓存
+├── P0-3 解除主线程阻塞 — ThreadPoolExecutor 隔离 CPU 密集型任务
+└── P0-4 算法热路径优化 — 单遍扫描 + @lru_cache + 大文件分块
+
+P1 系统层（数据传输/并发）
+├── P1-1 前端渲染优化 — LTTB 降采样 + @st.cache_data + 分页
+├── P1-2 数据传输优化 — GZipMiddleware + 分页API + 字段精简
+├── P1-3 后端并发优化 — asyncio.gather 并行化 + 120s 超时控制
+└── P1-4 增量分析能力 — 增量追踪 + NDJSON StreamingResponse
+
+P2 体验层（UX/错误处理/资源保护）
+├── P2-1 感知优化 — 实时进度条 + 分阶段展示 + 预期时间提示
+├── P2-2 预加载 — 文件上传后后台预处理 + 启动预热
+├── P2-3 错误体验 — 友好错误卡片 + 结果保留 + 一键重试
+└── P2-4 资源保护 — 文件大小限制 + 内存保护 + 并发队列
+```
+
+### 性能配置
+
+所有性能参数统一在 `config.py` 中管理，支持通过环境变量覆盖。关键参数：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `CONTENT_CACHE_TTL_SECONDS` | 300 | 分析结果缓存 TTL（秒） |
+| `PARSED_CACHE_TTL_SECONDS` | 600 | 日志解析缓存 TTL（秒） |
+| `ANALYSIS_TIMEOUT_SECONDS` | 120 | AI 分析超时 |
+| `MAX_LOG_SIZE_CHARS` | 100000 | 文件大小硬限制 |
+| `MAX_CONCURRENT_ANALYSES` | 3 | 最大并发分析数 |
+| `LTTB_THRESHOLD` | 500 | 图表降采样触发阈值 |
+| `LOG_CHUNK_SIZE` | 10000 | 大文件分块行数 |
+
+### 性能测试
+
+```bash
+# 运行完整性能基准测试
+PERF_DEBUG=1 python check_performance.py
+
+# 运行所有单元测试
+pytest tests/ -v
+
+# 运行性能相关测试
+pytest tests/test_analyzer.py tests/test_log_parser.py tests/test_fingerprint_engine.py -v
+```
+
 ## ⚙️ 工程特性
 
 | 特性 | 实现方式 |
@@ -232,9 +299,10 @@ CACHE_EMBEDDING_MODEL=all-MiniLM-L6-v2  # Embedding 模型
 | 🔄 自动重试 | 指数退避策略，超时/连接错误重试最多3次（1s→2s→4s） |
 | 🔐 异常分类 | 自定义 AuthError/RateLimitError/QuotaError，对用户友好提示 |
 | 📝 Prompt工程 | Few-shot示例 + RAG 历史案例注入，temperature=0.2保证稳定性 |
-| 🧪 单元测试 | pytest覆盖核心逻辑，100+测试用例（含缓存集成测试） |
+| 🧪 单元测试 | pytest覆盖核心逻辑，147+测试用例（含缓存集成测试） |
 | 🔄 CI/CD | GitHub Actions自动运行代码检查和测试 |
 | 📊 日志预处理 | 关键词提取+上下文截取，token消耗降低~80% |
+| 🛡️ 资源保护 | 文件大小限制 + 内存监控 + 并发队列，优雅降级不崩溃 |
 
 ---
 
