@@ -1,0 +1,32 @@
+# LogGazer GitHub App Configuration
+#
+# Place this file at: .github/loggazer.yml
+# LogGazer will read this config when processing CI failure events.
+#
+# All fields are optional — defaults are shown below.
+
+loggazer:
+  # Enable/disable LogGazer for this repository
+  enabled: true
+
+  # Automatically analyze failed check runs
+  auto_analyze: true
+
+  # Comment on associated pull requests with analysis results
+  comment_on_pr: true
+
+  # Comment template: "default" (full report), "minimal" (summary only), or "verbose" (everything)
+  comment_template: "default"
+
+  # Only analyze failures on these branches.
+  # Leave empty to analyze all branches.
+  whitelist_branches:
+    - main
+    - develop
+
+  # Minimum severity to trigger a PR comment.
+  # Options: low, medium, high, critical
+  severity_threshold: "medium"
+
+  # Maximum log size to analyze (in KB). Larger logs are truncated.
+  max_log_size_kb: 500

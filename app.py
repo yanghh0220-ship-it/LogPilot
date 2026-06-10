@@ -1,8 +1,21 @@
 # LogGazer - AI CI/CD 日志分析助手
-# 主程序入口
+# 主程序入口 (BFF Architecture)
+#
+# Data flow:
+#   User Input (st.text_area) → httpx.AsyncClient → FastAPI /v1/analyze → AnalysisResult → UI Rendering
+#
+# Backend URL configured via LOGGAZER_API_URL env var (default: http://localhost:8000)
 
+import os
 import streamlit as st
-from analyzer import analyze_log
+import httpx
+
+# Backend API URL (configurable for local/cloud deployment)
+BACKEND_URL = os.getenv("LOGGAZER_API_URL", "http://localhost:8000").rstrip("/")
+
+# ---- Backend Health State ----
+if "backend_healthy" not in st.session_state:
+    st.session_state["backend_healthy"] = None  # None = not checked yet
 
 # ============================================
 # 可观测性初始化（全局单例）
@@ -63,6 +76,68 @@ def _get_observability():
         except Exception as e:
             logger.warning("可观测性初始化失败（不影响核心功能）: %s", e)
     return _observability
+
+# ============================================
+#  BFF Helpers: Backend health check + API call wrapper
+# ============================================
+
+def check_backend_health() -> dict | None:
+    """Check if the LogGazer Backend is reachable and healthy."""
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            resp = client.get(f"{BACKEND_URL}/v1/health")
+            resp.raise_for_status()
+            return resp.json()
+    except Exception:
+        return None
+
+
+def call_analyze_via_api(log_text: str) -> dict:
+    """
+    Call LogGazer Backend API via HTTP (BFF pattern).
+
+    Returns the full AnalyzeResponse as a dict, or raises with a user-friendly message.
+    """
+    try:
+        with httpx.Client(timeout=180.0) as client:
+            resp = client.post(
+                f"{BACKEND_URL}/v1/analyze",
+                json={
+                    "log_text": log_text,
+                    "include_rag": True,
+                    "cache_policy": "auto",
+                },
+                headers={
+                    "Content-Type": "application/json",
+                    "X-API-Key": os.getenv("LOGGAZER_API_KEY", ""),
+                },
+            )
+
+            if resp.status_code == 422:
+                detail = resp.json()
+                raise ValueError(detail.get("detail", str(detail)))
+            elif resp.status_code == 429:
+                detail = resp.json()
+                retry_after = resp.headers.get("Retry-After", "60")
+                raise RuntimeError(f"请求过于频繁，请在 {retry_after}s 后重试。")
+            elif resp.status_code == 503:
+                detail = resp.json()
+                raise RuntimeError(detail.get("detail", "服务暂时不可用，请稍后重试。"))
+            elif not resp.is_success:
+                detail = resp.json() if resp.text else {"detail": resp.reason_phrase}
+                raise ConnectionError(detail.get("detail", f"HTTP {resp.status_code}"))
+
+            return resp.json()
+
+    except httpx.ConnectError:
+        raise ConnectionError(
+            f"无法连接到 LogGazer Backend ({BACKEND_URL})。\n\n"
+            f"请先启动后端服务：\n```bash\npython -m api.main\n```\n"
+            f"或设置 LOGGAZER_API_URL 环境变量指向正确的后端地址。"
+        )
+    except httpx.TimeoutException:
+        raise ConnectionError("分析请求超时，请检查网络或后端服务状态后重试。")
+
 
 # ============================================
 # 页面配置
@@ -414,12 +489,26 @@ with col2:
     analyze_clicked = st.button("开始分析", type="primary", use_container_width=True)
 
 # ============================================
-# 分析 + 结果展示
+# 分析 + 结果展示 (BFF Pattern)
 # ============================================
 if analyze_clicked:
     if not log_input.strip():
         st.warning("请先粘贴日志内容")
     else:
+        # ---- 后端健康检查（首次使用时） ----
+        if st.session_state["backend_healthy"] is None:
+            health = check_backend_health()
+            st.session_state["backend_healthy"] = health is not None and health.get("status") in ("healthy", "degraded")
+
+        if not st.session_state["backend_healthy"]:
+            st.warning(
+                f"⚠️ **LogGazer Backend 未启动**\n\n"
+                f"无法连接到 `{BACKEND_URL}`。请先启动后端服务：\n\n"
+                f"```bash\npython -m api.main\n```\n\n"
+                f"启动后刷新页面即可。"
+            )
+            st.stop()
+
         # 初始化可观测性（首次调用时）
         obs = _get_observability()
 
@@ -447,40 +536,49 @@ if analyze_clicked:
             elif cb_status == "warning":
                 st.warning("⚠️ 本月分析额度已使用 80% 以上，请注意控制用量。")
 
-        # ---- 带追踪的分析 ----
-        cache_status = "miss"  # 默认，实际值由 analyzer 决定
+        # ---- 带追踪的分析 (BFF: HTTP call to FastAPI) ----
         if obs:
             obs.increment_active_requests()
 
         with st.spinner("正在分析..."):
             try:
-                # 使用 trace_analysis 上下文管理器包裹分析调用
+                # BFF Pattern: call FastAPI backend instead of direct analyze_log()
                 if obs:
-                    with obs.trace_analysis(platform="unknown", cache_status=cache_status) as ctx:
-                        result = analyze_log(log_input)
+                    with obs.trace_analysis(platform="unknown", cache_status="miss") as ctx:
+                        api_response = call_analyze_via_api(log_input)
                 else:
-                    result = analyze_log(log_input)
+                    api_response = call_analyze_via_api(log_input)
+
+                # Extract AnalysisResult from AnalyzeResponse
+                result_data = api_response.get("result", {})
+                meta = api_response.get("meta", {})
+                request_id = api_response.get("request_id", "")
+
+                # Wrap in dict-compatible object for UI rendering
+                # AnalysisResult supports .get() and [] access via __getitem__
+                from models import AnalysisResult
+                result = AnalysisResult.model_validate(result_data)
+
+                # Display metadata (optional, for debugging)
+                if meta.get("cache_status") == "hit":
+                    st.info(f"⚡ 缓存命中 (耗时 {meta.get('duration_ms', 0):.0f}ms)", icon="⚡")
 
             except ValueError as e:
-                # 输入为空或 JSON 解析失败
                 if obs:
                     obs.record_error("validation")
                 st.error(f"输入错误：{str(e)}")
                 st.stop()
             except RuntimeError as e:
-                # API Key 未配置或 AI 返回空内容
                 if obs:
                     obs.record_error("auth")
                 st.error(f"配置错误：{str(e)}")
                 st.stop()
             except ConnectionError as e:
-                # API 调用失败（网络、认证、余额等）
                 if obs:
                     obs.record_error("network")
-                st.error(f"网络错误：{str(e)}")
+                st.error(f"连接错误：{str(e)}")
                 st.stop()
             except Exception as e:
-                # 其他未知异常
                 if obs:
                     obs.record_error("network")
                 st.error(f"分析失败：{str(e)}")

@@ -9,6 +9,19 @@ python-dotenv>=1.0.0    # 读取 .env 文件中的 API Key（本地开发用）
 pydantic>=2.0.0         # 结构化数据模型（运行时校验 + JSON Schema 生成）
 instructor>=1.0.0       # LLM 结构化输出（强制 AI 按 Schema 生成 JSON）
 
+# ---- FastAPI Backend (BFF Architecture) ----
+fastapi>=0.110.0         # FastAPI 框架（异步 REST API）
+uvicorn[standard]>=0.27.0  # ASGI 服务器（FastAPI 运行时）
+httpx>=0.27.0            # 异步 HTTP 客户端（Streamlit BFF → FastAPI）
+python-multipart>=0.0.9  # 表单解析（FastAPI 依赖，预留）
+
+# ---- MCP Protocol ----
+mcp>=1.0.0               # MCP (Model Context Protocol) Python SDK（FastMCP）
+
+# ---- GitHub App Integration ----
+PyGithub>=2.1.0          # GitHub API 客户端（Webhook + PR 评论）
+PyYAML>=6.0              # YAML 解析（.github/loggazer.yml 配置）
+
 # ---- 语义缓存依赖 ----
 sentence-transformers>=2.2.0  # 本地 Embedding 模型（all-MiniLM-L6-v2）
 qdrant-client>=1.7.0          # 向量数据库（本地内存模式）
@@ -26,3 +39,9 @@ opentelemetry-api>=1.20.0     # OpenTelemetry API（链路追踪接口）
 opentelemetry-sdk>=1.20.0     # OpenTelemetry SDK（TracerProvider 实现）
 opentelemetry-exporter-otlp-proto-http>=1.20.0  # OTLP HTTP Exporter（可选，生产环境用）
 redis>=5.0.0                  # Redis 客户端（限流 + 成本统计持久化）
+
+# ---- 开发 & 测试依赖 ----
+pytest>=8.0.0             # 测试框架
+pytest-asyncio>=0.23.0    # 异步测试支持（MCP Server 测试）
+httpx>=0.27.0             # HTTP 测试客户端（TestClient 备用）
+responses>=0.24.0         # HTTP Mock 库（GitHub App Webhook Mock）

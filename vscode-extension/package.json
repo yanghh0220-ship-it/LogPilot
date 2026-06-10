@@ -1,0 +1,101 @@
+{
+  "name": "loggazer-vscode",
+  "displayName": "LogGazer — AI CI/CD Log Analyzer",
+  "description": "Analyze CI/CD build failure logs directly from your terminal with AI-powered root cause analysis",
+  "version": "1.1.0",
+  "publisher": "loggazer",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loggazer/loggazer-vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Debuggers"
+  ],
+  "keywords": [
+    "log",
+    "ci",
+    "cd",
+    "devops",
+    "error",
+    "analysis",
+    "ai",
+    "debugging"
+  ],
+  "activationEvents": [
+    "onCommand:loggazer.analyzeTerminalSelection"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "loggazer.analyzeTerminalSelection",
+        "title": "LogGazer: Analyze Terminal Selection",
+        "category": "LogGazer"
+      },
+      {
+        "command": "loggazer.showAnalysisPanel",
+        "title": "LogGazer: Show Analysis Panel",
+        "category": "LogGazer"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "loggazer.analyzeTerminalSelection",
+          "when": "editorFocus",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "LogGazer",
+      "properties": {
+        "loggazer.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "LogGazer Backend URL. Set to your cloud instance URL for remote deployment.",
+          "format": "uri"
+        },
+        "loggazer.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "LogGazer API Key (required for cloud mode). Leave empty for local mode."
+        },
+        "loggazer.autoAnalyzeOnError": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically analyze terminal content when an error is detected."
+        },
+        "loggazer.maxLogSizeKB": {
+          "type": "number",
+          "default": 100,
+          "description": "Maximum log size in KB to send for analysis. Larger logs are truncated."
+        },
+        "loggazer.showMetadata": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show analysis metadata (duration, model used, cost) in the panel."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0",
+    "eslint": "^8.50.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0"
+  }
+}
