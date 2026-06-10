@@ -146,6 +146,7 @@ def start_backend_process() -> bool:
 
     st.session_state["backend_starting"] = True
 
+    log_fp = None
     try:
         # Launch backend as detached subprocess
         # On Windows: CREATE_NEW_PROCESS_GROUP to avoid Ctrl+C propagation
@@ -163,7 +164,6 @@ def start_backend_process() -> bool:
             start_new_session=True if sys.platform != "win32" else False,
             creationflags=creationflags if sys.platform == "win32" else 0,
         )
-        log_fp.close()  # Child has its own copy; close parent's handle
         st.session_state["backend_pid"] = proc.pid
         return True
     except Exception as e:
@@ -171,6 +171,9 @@ def start_backend_process() -> bool:
         st.session_state["backend_pid"] = None
         st.error(f"启动后端失败: {e}")
         return False
+    finally:
+        if log_fp is not None:
+            log_fp.close()  # Child has its own copy; close parent's handle
 
 
 def wait_for_backend(timeout: float = 20.0, interval: float = 1.5) -> bool:
@@ -530,14 +533,30 @@ tests/test_auth.py:15: AssertionError
 # ============================================
 # 主动后端健康检查 + 后台自动启动
 # ============================================
-# 页面首次渲染时主动检查后端状态并在后台启动，
-# 让后端在用户操作期间启动，避免点击"开始分析"后才等待。
-if st.session_state["backend_healthy"] is None:
-    health = check_backend_health()
-    st.session_state["backend_healthy"] = health is not None and health.get("status") in ("healthy", "degraded")
-    if not st.session_state["backend_healthy"] and not st.session_state.get("backend_starting"):
-        # Fire-and-forget: 启动进程后不等待，让用户继续操作
-        start_backend_process()
+# 每次页面渲染时都主动检查后端状态并自动启动，
+# 确保即使页面重新加载（F5），后端也能自动恢复。
+# 之前仅 backend_healthy is None 时检查（首次加载），
+# 重载后 session_state 被保留，backend_healthy != None，跳过检查导致报错。
+
+# 1. 清理过期的启动状态（防止残留状态阻止重新启动）
+if st.session_state.get("backend_starting"):
+    prev_pid = st.session_state.get("backend_pid")
+    if prev_pid and not _is_pid_alive(prev_pid):
+        # 之前启动的进程已死，重置状态以允许重新启动
+        st.session_state["backend_starting"] = False
+        st.session_state["backend_pid"] = None
+    elif not prev_pid:
+        # PID 未记录（异常状态），保守重置
+        st.session_state["backend_starting"] = False
+
+# 2. 每次加载时检查后端健康状态（不再仅依赖首次检查）
+health = check_backend_health()
+st.session_state["backend_healthy"] = health is not None and health.get("status") in ("healthy", "degraded")
+
+# 3. 后端不健康且未在启动中 → 后台自动启动
+if not st.session_state["backend_healthy"] and not st.session_state.get("backend_starting"):
+    # Fire-and-forget: 启动进程后不等待，让用户在后台启动期间继续操作
+    start_backend_process()
 
 # ============================================
 # 标题
